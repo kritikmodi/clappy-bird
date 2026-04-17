@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Flappy Mac Bird</title>
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(#85d6ff, #2f9ff7 60%, #1f7bc6);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .wrap {
+      text-align: center;
+      color: #ffffff;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    }
+    canvas {
+      width: min(92vw, 420px);
+      height: auto;
+      border: 3px solid rgba(255, 255, 255, 0.8);
+      border-radius: 16px;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.3);
+      background: #8edcff;
+      display: block;
+      margin: 0 auto;
+    }
+    .hint {
+      margin-top: 12px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <canvas id="game" width="420" height="640" aria-label="Flappy bird style game"></canvas>
+    <div class="hint">Press <kbd>Space</kbd> or click to flap. Press <kbd>R</kbd> to restart.</div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+
+    const config = {
+      gravity: 0.32,
+      flapPower: -5.8,
+      pipeSpeed: 2.4,
+      pipeWidth: 68,
+      pipeGap: 170,
+      pipeSpawnEvery: 95,
+      groundHeight: 88
+    };
+
+    const state = {
+      bird: { x: 120, y: 260, radius: 16, velocity: 0, angle: 0 },
+      pipes: [],
+      frame: 0,
+      score: 0,
+      best: Number(localStorage.getItem("flappyBest") || 0),
+      started: false,
+      gameOver: false
+    };
+
+    function resetGame() {
+      state.bird = { x: 120, y: 260, radius: 16, velocity: 0, angle: 0 };
+      state.pipes = [];
+      state.frame = 0;
+      state.score = 0;
+      state.started = false;
+      state.gameOver = false;
+    }
+
+    function flap() {
+      if (state.gameOver) return;
+      state.started = true;
+      state.bird.velocity = config.flapPower;
+    }
+
+    function spawnPipe() {
+      const minTop = 70;
+      const maxTop = canvas.height - config.groundHeight - config.pipeGap - 70;
+      const topHeight = Math.floor(Math.random() * (maxTop - minTop + 1) + minTop);
+      state.pipes.push({
+        x: canvas.width + 4,
+        topHeight,
+        counted: false
+      });
+    }
+
+    function circleRectCollision(cx, cy, r, rx, ry, rw, rh) {
+      const closestX = Math.max(rx, Math.min(cx, rx + rw));
+      const closestY = Math.max(ry, Math.min(cy, ry + rh));
+      const dx = cx - closestX;
+      const dy = cy - closestY;
+      return (dx * dx + dy * dy) <= r * r;
+    }
+
+    function update() {
+      if (!state.started || state.gameOver) return;
+
+      state.frame += 1;
+      state.bird.velocity += config.gravity;
+      state.bird.y += state.bird.velocity;
+      state.bird.angle = Math.max(-0.6, Math.min(1.1, state.bird.velocity * 0.11));
+
+      if (state.frame % config.pipeSpawnEvery === 0) {
+        spawnPipe();
+      }
+
+      for (const pipe of state.pipes) {
+        pipe.x -= config.pipeSpeed;
+      }
+      state.pipes = state.pipes.filter((pipe) => pipe.x + config.pipeWidth > -2);
+
+      for (const pipe of state.pipes) {
+        const bottomY = pipe.topHeight + config.pipeGap;
+        if (
+          circleRectCollision(state.bird.x, state.bird.y, state.bird.radius, pipe.x, 0, config.pipeWidth, pipe.topHeight) ||
+          circleRectCollision(
+            state.bird.x,
+            state.bird.y,
+            state.bird.radius,
+            pipe.x,
+            bottomY,
+            config.pipeWidth,
+            canvas.height - config.groundHeight - bottomY
+          )
+        ) {
+          state.gameOver = true;
+        }
+
+        if (!pipe.counted && pipe.x + config.pipeWidth < state.bird.x) {
+          pipe.counted = true;
+          state.score += 1;
+        }
+      }
+
+      const groundTop = canvas.height - config.groundHeight;
+      if (state.bird.y + state.bird.radius >= groundTop || state.bird.y - state.bird.radius <= 0) {
+        state.gameOver = true;
+      }
+
+      if (state.gameOver && state.score > state.best) {
+        state.best = state.score;
+        localStorage.setItem("flappyBest", String(state.best));
+      }
+    }
+
+    function drawBackground() {
+      ctx.fillStyle = "#8edcff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = "#ffffff";
+      for (let i = 0; i < 4; i += 1) {
+        const x = ((state.frame * 0.3) + i * 140) % (canvas.width + 180) - 90;
+        ctx.beginPath();
+        ctx.ellipse(canvas.width - x, 120 + i * 16, 32, 18, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function drawPipes() {
+      for (const pipe of state.pipes) {
+        const bottomY = pipe.topHeight + config.pipeGap;
+        ctx.fillStyle = "#2cbf4f";
+        ctx.fillRect(pipe.x, 0, config.pipeWidth, pipe.topHeight);
+        ctx.fillRect(pipe.x, bottomY, config.pipeWidth, canvas.height - config.groundHeight - bottomY);
+
+        ctx.fillStyle = "#1d8e39";
+        ctx.fillRect(pipe.x - 4, pipe.topHeight - 16, config.pipeWidth + 8, 16);
+        ctx.fillRect(pipe.x - 4, bottomY, config.pipeWidth + 8, 16);
+      }
+    }
+
+    function drawGround() {
+      const y = canvas.height - config.groundHeight;
+      ctx.fillStyle = "#dec56e";
+      ctx.fillRect(0, y, canvas.width, config.groundHeight);
+
+      ctx.strokeStyle = "#c5ab4f";
+      ctx.lineWidth = 3;
+      for (let x = 0; x < canvas.width; x += 26) {
+        ctx.beginPath();
+        ctx.moveTo(x, y + 6);
+        ctx.lineTo(x + 14, y + 18);
+        ctx.stroke();
+      }
+    }
+
+    function drawBird() {
+      const b = state.bird;
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.rotate(b.angle);
+
+      ctx.fillStyle = "#ffd94a";
+      ctx.beginPath();
+      ctx.arc(0, 0, b.radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#f7b422";
+      ctx.beginPath();
+      ctx.ellipse(-4, 3, 8, 6, -0.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(5, -5, 6, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#111111";
+      ctx.beginPath();
+      ctx.arc(7, -5, 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#ff8a00";
+      ctx.beginPath();
+      ctx.moveTo(14, 0);
+      ctx.lineTo(24, -3);
+      ctx.lineTo(14, -6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawHud() {
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 36px -apple-system, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(String(state.score), canvas.width / 2, 64);
+
+      ctx.font = "bold 16px -apple-system, sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText("Best: " + state.best, 16, 32);
+
+      if (!state.started) {
+        drawMessage("Tap to start");
+      } else if (state.gameOver) {
+        drawMessage("Game Over", "Press R to restart");
+      }
+    }
+
+    function drawMessage(title, subtitle = "Space / Click to flap") {
+      ctx.fillStyle = "rgba(0, 0, 0, 0.42)";
+      ctx.fillRect(52, 218, canvas.width - 104, 156);
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(52, 218, canvas.width - 104, 156);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "center";
+      ctx.font = "bold 30px -apple-system, sans-serif";
+      ctx.fillText(title, canvas.width / 2, 278);
+      ctx.font = "600 17px -apple-system, sans-serif";
+      ctx.fillText(subtitle, canvas.width / 2, 312);
+    }
+
+    function render() {
+      drawBackground();
+      drawPipes();
+      drawGround();
+      drawBird();
+      drawHud();
+    }
+
+    function loop() {
+      update();
+      render();
+      requestAnimationFrame(loop);
+    }
+
+    document.addEventListener("keydown", (event) => {
+      if (event.code === "Space") {
+        event.preventDefault();
+        flap();
+      } else if (event.key.toLowerCase() === "r") {
+        resetGame();
+      }
+    });
+
+    canvas.addEventListener("mousedown", flap);
+    canvas.addEventListener("touchstart", (event) => {
+      event.preventDefault();
+      flap();
+    }, { passive: false });
+
+    loop();
+  </script>
+</body>
+</html>
